@@ -75,18 +75,37 @@ func (s *Store) load() error {
 	}
 	return s.validateOrRecoverSnapshot()
 }
-func (s *Store) append(r EventRecord) error {
+func (s *Store) append(r EventRecord) (int64, error) {
 	p := filepath.Join(s.dir, "events.jsonl")
 	f, e := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if e != nil {
-		return e
+		return 0, e
 	}
 	defer f.Close()
+	var before int64
+	if fi, fe := f.Stat(); fe == nil {
+		before = fi.Size()
+	}
 	b, _ := json.Marshal(r)
 	if _, e = f.Write(append(b, '\n')); e != nil {
-		return e
+		return before, e
 	}
-	return f.Sync()
+	if e = f.Sync(); e != nil {
+		return before, e
+	}
+	return before, nil
+}
+// truncateLedger drops any bytes appended beyond offset, used to roll back a
+// ledger record when a later persistence step fails.
+func (s *Store) truncateLedger(offset int64) {
+	p := filepath.Join(s.dir, "events.jsonl")
+	if e := os.Truncate(p, offset); e != nil {
+		return
+	}
+	if f, e := os.OpenFile(p, os.O_WRONLY, 0644); e == nil {
+		_ = f.Sync()
+		_ = f.Close()
+	}
 }
 func (s *Store) Commit(d *domain.SurveyDossier, expected uint64, key, reqHash, typ, actor string) error {
 	s.mu.Lock()
@@ -119,15 +138,54 @@ func (s *Store) Commit(d *domain.SurveyDossier, expected uint64, key, reqHash, t
 	ev.Hash = domain.AuditHash(ev)
 	stored := domain.CloneDossier(d)
 	r := EventRecord{SchemaVersion: SchemaVersion, Event: ev, Dossier: stored, IdempotencyKey: key, RequestHash: reqHash}
-	if e := s.append(r); e != nil {
+	before, e := s.append(r)
+	if e != nil {
 		return e
 	}
+	// Append the ledger record, then write the snapshot projection. Only when
+	// both persistence steps succeed do we keep the in-memory state and the
+	// appended record. If the snapshot fails we roll the ledger back and
+	// restore the previous in-memory projection so queries and recovery never
+	// observe a half-committed dossier, event or idempotency record.
+	committed := false
+	defer func() {
+		if !committed {
+			s.truncateLedger(before)
+		}
+	}()
 	s.events = append(s.events, ev)
+	prevDossier := s.dossiers[d.ID]
 	s.dossiers[d.ID] = stored
+	var prevIdem EventRecord
+	hadIdem := false
 	if key != "" {
+		if rec, ok := s.idem[key]; ok {
+			prevIdem = rec
+			hadIdem = true
+		}
 		s.idem[key] = r
 	}
-	return s.snapshot()
+	if e := s.snapshot(); e != nil {
+		// Roll back the in-memory projection to its pre-commit state.
+		if len(s.events) > 0 {
+			s.events = s.events[:len(s.events)-1]
+		}
+		if prevDossier != nil {
+			s.dossiers[d.ID] = prevDossier
+		} else {
+			delete(s.dossiers, d.ID)
+		}
+		if key != "" {
+			if hadIdem {
+				s.idem[key] = prevIdem
+			} else {
+				delete(s.idem, key)
+			}
+		}
+		return e
+	}
+	committed = true
+	return nil
 }
 func (s *Store) snapshot() error {
 	p := filepath.Join(s.dir, "snapshot.json")
