@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -25,22 +26,56 @@ func (a *API) Handler() http.Handler {
 func (a *API) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"status": "ok"})
 }
-func decode(r *http.Request, v any) error {
+
+// maxBodyBytes 限制单次请求体长度。上限为 1 MiB。
+const maxBodyBytes int64 = 1 << 20
+
+// errRequestBodyTooLarge 在请求体超过 maxBodyBytes 上限时返回。
+var errRequestBodyTooLarge = &domain.Error{Code: "REQUEST_BODY_TOO_LARGE", Message: "请求体超过1MiB上限"}
+
+// readSingleJSONDocument 读取至多 maxBodyBytes 字节并校验请求体恰好包含一个
+// 合法 JSON 文档。它区分真实 EOF 与受限读取器的截断 EOF：只有真实 EOF 且
+// 第一个 JSON 文档之后仅有空白字节时才允许继续处理。若存在第二个 JSON 文档、
+// 非空白尾随字节或任何超过上限的截断，返回稳定的客户端错误。
+func readSingleJSONDocument(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
-		return io.EOF
+		return nil, io.EOF
 	}
+	defer r.Body.Close()
+	lr := io.LimitReader(r.Body, maxBodyBytes+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, &applicationError{err: err}
+	}
+	if int64(len(data)) > maxBodyBytes {
+		return nil, errRequestBodyTooLarge
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	var v json.RawMessage
+	if err := d.Decode(&v); err != nil {
+		return nil, &applicationError{err: err}
+	}
+	rest := bytes.TrimLeft(data[d.InputOffset():], " \t\n\r\v\f")
+	if len(rest) != 0 {
+		return nil, &applicationError{err: io.ErrUnexpectedEOF}
+	}
+	return v, nil
+}
+
+func decode(r *http.Request, v any) error {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return &domain.Error{Code: "INVALID_CONTENT_TYPE", Message: "Content-Type必须为application/json"}
 	}
-	defer r.Body.Close()
-	d := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	data, err := readSingleJSONDocument(r)
+	if err != nil {
+		return err
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
 		return &applicationError{err: err}
-	}
-	if d.Decode(&struct{}{}) != io.EOF {
-		return &applicationError{err: io.ErrUnexpectedEOF}
 	}
 	return nil
 }
@@ -55,7 +90,8 @@ func strictUnmarshal(data []byte, v any) error {
 	if err := d.Decode(v); err != nil {
 		return &applicationError{err: err}
 	}
-	if d.Decode(&struct{}{}) != io.EOF {
+	rest := bytes.TrimLeft(data[d.InputOffset():], " \t\n\r\v\f")
+	if len(rest) != 0 {
 		return &applicationError{err: io.ErrUnexpectedEOF}
 	}
 	return nil
@@ -80,6 +116,15 @@ func actor(r *http.Request) string {
 }
 func key(r *http.Request) string { return r.Header.Get("Idempotency-Key") }
 func errWrite(w http.ResponseWriter, e error) {
+	if errors.Is(e, io.EOF) {
+		writeError(w, &domain.Error{Code: "INVALID_JSON", Message: "请求体不能为空"})
+		return
+	}
+	var appErr *applicationError
+	if errors.As(e, &appErr) {
+		writeError(w, &domain.Error{Code: "INVALID_JSON", Message: appErr.Error()})
+		return
+	}
 	writeError(w, application.StateError(e))
 }
 func (a *API) HandleDossiers(w http.ResponseWriter, r *http.Request) {
