@@ -12,11 +12,11 @@ type Service struct {
 	st        *store.Store
 	mu        sync.Mutex
 	riskMu    sync.Mutex
-	riskCache map[string]RiskResponse
+	riskCache map[string]riskCacheEntry
 }
 
 func New(st *store.Store) *Service {
-	return &Service{st: st, riskCache: map[string]RiskResponse{}}
+	return &Service{st: st, riskCache: map[string]riskCacheEntry{}}
 }
 
 type CreateInput struct{ BuildingCode, Title, SurveyBoundary string }
@@ -39,6 +39,9 @@ func (s *Service) Create(in CreateInput, key, actor string) (*domain.SurveyDossi
 		}
 	}
 	e = s.st.Commit(d, 0, key, h, "DOSSIER_CREATED", actor)
+	if e == nil {
+		s.invalidateRisk(d.ID)
+	}
 	return d, e
 }
 func (s *Service) mutate(id string, expected uint64, actor, typ string, fn func(*domain.SurveyDossier) error) (*domain.SurveyDossier, error) {
@@ -60,6 +63,7 @@ func (s *Service) mutate(id string, expected uint64, actor, typ string, fn func(
 	if e := s.st.Commit(d, expected, "", domain.Digest(d), typ, actor); e != nil {
 		return nil, e
 	}
+	s.invalidateRisk(d.ID)
 	return d, nil
 }
 func (s *Service) AddComponent(id string, in ComponentInput, expected uint64, actor string) (*domain.SurveyDossier, error) {
@@ -117,6 +121,7 @@ func (s *Service) mutateKey(id string, in any, expected uint64, actor, key, typ 
 	if e := s.st.Commit(d, expected, key, h, typ, actor); e != nil {
 		return nil, e
 	}
+	s.invalidateRisk(d.ID)
 	return d, nil
 }
 func (s *Service) Assess(id string, expected uint64, actor string) (assessment.Result, *domain.SurveyDossier, error) {
@@ -155,6 +160,7 @@ func (s *Service) AssessKey(id string, expected uint64, actor, key string) (asse
 	if e := s.st.Commit(d, expected, key, hash, "ASSESSED", actor); e != nil {
 		return r, nil, e
 	}
+	s.invalidateRisk(d.ID)
 	return r, d, nil
 }
 
@@ -235,6 +241,7 @@ func (s *Service) ReleaseKey(id, actor string, expected uint64, key string) (*do
 	if err := s.st.Commit(d, expected, key, hash, "RELEASE_ISSUED", actor); err != nil {
 		return nil, err
 	}
+	s.invalidateRisk(d.ID)
 	return d, nil
 }
 func (s *Service) Timeline(id string) (domain.Timeline, error) {

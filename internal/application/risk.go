@@ -33,9 +33,14 @@ type RiskSummary struct {
 }
 
 type RiskResponse struct {
-	Items         []RiskItem  `json:"items"`
-	Summary       RiskSummary `json:"summary"`
-	AuditVerified bool        `json:"auditVerified"`
+	Items   []RiskItem  `json:"items"`
+	Summary RiskSummary `json:"summary"`
+	AuditVerified bool  `json:"auditVerified"`
+}
+
+type riskCacheEntry struct {
+	version  uint64
+	response RiskResponse
 }
 
 func (s *Service) QueryRisk(id string, filter RiskFilter) (RiskResponse, error) {
@@ -105,24 +110,37 @@ func (s *Service) QueryRisk(id string, filter RiskFilter) (RiskResponse, error) 
 		return response.Items[i].ComponentCode < response.Items[j].ComponentCode
 	})
 	if cacheable {
-		s.rememberRisk(id, response)
+		s.rememberRisk(id, d.Version, response)
 	}
 	return response, nil
 }
 
 func (s *Service) cachedRisk(id string) (RiskResponse, bool) {
+	version, ok := s.st.SnapshotVersion(id)
+	if !ok {
+		return RiskResponse{}, false
+	}
 	s.riskMu.Lock()
 	defer s.riskMu.Unlock()
-	response, exists := s.riskCache[id]
-	response.Items = append([]RiskItem(nil), response.Items...)
-	return response, exists
+	entry, exists := s.riskCache[id]
+	if !exists || entry.version != version {
+		return RiskResponse{}, false
+	}
+	entry.response.Items = append([]RiskItem(nil), entry.response.Items...)
+	return entry.response, true
 }
 
-func (s *Service) rememberRisk(id string, response RiskResponse) {
+func (s *Service) rememberRisk(id string, version uint64, response RiskResponse) {
 	s.riskMu.Lock()
 	defer s.riskMu.Unlock()
 	response.Items = append([]RiskItem(nil), response.Items...)
-	s.riskCache[id] = response
+	s.riskCache[id] = riskCacheEntry{version: version, response: response}
+}
+
+func (s *Service) invalidateRisk(id string) {
+	s.riskMu.Lock()
+	defer s.riskMu.Unlock()
+	delete(s.riskCache, id)
 }
 
 func findingCovered(plan *domain.RepairPlanRevision, finding domain.ReviewFinding, componentID string) bool {
