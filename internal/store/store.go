@@ -75,6 +75,17 @@ func (s *Store) load() error {
 	}
 	return s.validateOrRecoverSnapshot()
 }
+
+// refresh rebuilds the in-memory projection from the on-disk ledger so that
+// commits issued by concurrent Store instances sharing one data directory
+// coordinate against the latest ledger state (sequence numbers, previous hash,
+// idempotency keys and dossier versions).
+func (s *Store) refresh() error {
+	s.events = nil
+	s.dossiers = map[string]*domain.SurveyDossier{}
+	s.idem = map[string]EventRecord{}
+	return s.load()
+}
 func (s *Store) append(r EventRecord) error {
 	p := filepath.Join(s.dir, "events.jsonl")
 	f, e := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -97,6 +108,9 @@ func (s *Store) Commit(d *domain.SurveyDossier, expected uint64, key, reqHash, t
 	if err := d.Validate(); err != nil {
 		return err
 	}
+	if err := s.refresh(); err != nil {
+		return err
+	}
 	if old, ok := s.dossiers[d.ID]; ok && expected != 0 && old.Version != expected {
 		return &domain.Error{Code: "VERSION_CONFLICT", Message: "档案版本已变化", State: old.State, Version: old.Version}
 	}
@@ -109,10 +123,12 @@ func (s *Store) Commit(d *domain.SurveyDossier, expected uint64, key, reqHash, t
 		}
 	}
 	prev := ""
+	lastSequence := uint64(0)
 	if len(s.events) > 0 {
 		prev = s.events[len(s.events)-1].Hash
+		lastSequence = s.events[len(s.events)-1].Sequence
 	}
-	ev := domain.AuditEvent{Sequence: uint64(len(s.events) + 1), EventID: domain.Digest(struct {
+	ev := domain.AuditEvent{Sequence: lastSequence + 1, EventID: domain.Digest(struct {
 		D string
 		N int64
 	}{d.ID, time.Now().UnixNano()})[:20], DossierID: d.ID, EventType: typ, Actor: actor, State: d.State, OccurredAt: time.Now().UTC(), PayloadHash: domain.Digest(d), PreviousHash: prev}
