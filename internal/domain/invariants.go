@@ -79,6 +79,15 @@ func (d *SurveyDossier) PlanCoversComponent(plan RepairPlanRevision, id string) 
 		if a.ComponentID == id {
 			return true
 		}
+		if a.FindingID != "" {
+			if finding, ok := d.Findings[a.FindingID]; ok {
+				for _, componentID := range finding.ComponentIDs {
+					if componentID == id {
+						return true
+					}
+				}
+			}
+		}
 	}
 	return false
 }
