@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "batches": {
+    "batch-3f6f93b0d1e308b4": {
+      "id": "batch-3f6f93b0d1e308b4",
+      "code": "SC-001",
+      "waterBody": "示范河段",
+      "samplingDate": "2026-08-25T08:00:00Z",
+      "status": "released",
+      "version": 8,
+      "createdBy": "采样员",
+      "createdAt": "2026-08-24T19:51:03.678402253Z",
+      "frozenAt": "2026-08-24T19:51:03.694673228Z",
+      "sites": {
+        "site-2364edde017c8621": {
+          "id": "site-2364edde017c8621",
+          "batchID": "batch-3f6f93b0d1e308b4",
+          "siteCode": "S-01",
+          "latitude": 30.1,
+          "longitude": 120.2,
+          "sectionName": "断面一",
+          "weather": "",
+          "collector": "采样员",
+          "collectedAt": "2026-08-25T08:10:00Z"
+        }
+      },
+      "samples": {
+        "sample-4f4e13decb29df8d": {
+          "id": "sample-4f4e13decb29df8d",
+          "siteID": "site-2364edde017c8621",
+          "sampleCode": "SP-01",
+          "matrix": "水",
+          "containerType": "玻璃瓶",
+          "preservedAt": "2026-08-25T08:15:00Z",
+          "receivedAt": "2026-08-25T10:00:00Z",
+          "chainOfCustody": "C-01"
+        }
+      },
+      "measurements": {
+        "measurement-095c2deef1c93ba6": {
+          "id": "measurement-095c2deef1c93ba6",
+          "sampleID": "sample-4f4e13decb29df8d",
+          "indicator": "pH",
+          "value": 7.2,
+          "unit": "pH",
+          "method": "电极法",
+          "instrumentID": "PH-1",
+          "measuredBy": "分析员",
+          "measuredAt": "2026-08-25T11:00:00Z",
+          "revision": 1
+        }
+      },
+      "issues": {},
+      "certificate": {
+        "id": "cert-0f39a64561b1910f",
+        "batchID": "batch-3f6f93b0d1e308b4",
+        "datasetVersion": "dataset-v7",
+        "issuedBy": "主管",
+        "issuedAt": "2026-08-24T19:51:03.697267495Z",
+        "contentHash": "1dc832c1636995aee4b893d3f09045837094c5b412a87cb1afa0bff3a5e639fb",
+        "ruleSummary": "质量问题0项",
+        "signature": "6dc793a656ad1fce426eb9e4192823e557f895b77d15de7d66832e77017d2a58"
+      }
+    }
+  }
+}
