@@ -28,7 +28,7 @@ func (s *Service) Create(in CreateInput, key, actor string) (*domain.SurveyDossi
 	if e != nil {
 		return nil, e
 	}
-	h := domain.Digest(in)
+	h := requestFingerprint("CREATE", actor, in)
 	if key != "" {
 		if old, ok, er := s.st.Idempotent(key, h); ok || er != nil {
 			return old, er
@@ -88,10 +88,7 @@ func (s *Service) Observe(id string, in ObservationInput, expected uint64, actor
 func (s *Service) mutateKey(id string, in any, expected uint64, actor, key, typ string, fn func(*domain.SurveyDossier) error) (*domain.SurveyDossier, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	h := domain.Digest(struct {
-		DossierID, Type string
-		Input           any
-	}{id, typ, in})
+	h := requestFingerprint(id+"|"+typ, actor, in)
 	if key != "" {
 		if old, ok, e := s.st.Idempotent(key, h); ok || e != nil {
 			return old, e
@@ -122,7 +119,7 @@ func (s *Service) Assess(id string, expected uint64, actor string) (assessment.R
 func (s *Service) AssessKey(id string, expected uint64, actor, key string) (assessment.Result, *domain.SurveyDossier, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	hash := domain.Digest(struct{ DossierID, Type string }{id, "ASSESSED"})
+	hash := requestFingerprint(id+"|ASSESSED", actor, nil)
 	if key != "" {
 		if old, ok, err := s.st.Idempotent(key, hash); ok || err != nil {
 			if err != nil {
@@ -197,7 +194,7 @@ func (s *Service) ReleaseKey(id, actor string, expected uint64, key string) (*do
 	if err := s.st.VerifyChain(); err != nil {
 		return nil, &domain.Error{Code: "AUDIT_INTEGRITY_ERROR", Message: err.Error()}
 	}
-	hash := domain.Digest(struct{ DossierID, Type string }{id, "RELEASE_ISSUED"})
+	hash := requestFingerprint(id+"|RELEASE_ISSUED", actor, nil)
 	if key != "" {
 		if old, ok, err := s.st.Idempotent(key, hash); ok || err != nil {
 			if err != nil {

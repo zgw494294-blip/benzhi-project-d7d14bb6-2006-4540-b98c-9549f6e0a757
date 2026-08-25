@@ -5,6 +5,15 @@ import (
 	"timber-release-gate/internal/domain"
 )
 
+// requestFingerprint keeps idempotency payload construction consistent across
+// commands.
+func requestFingerprint(scope, actor string, payload any) string {
+	return domain.Digest(struct {
+		Scope   string
+		Payload any
+	}{scope, payload})
+}
+
 type IdempotencyStatus struct {
 	Key       string `json:"key"`
 	Present   bool   `json:"present"`
