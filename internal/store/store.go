@@ -19,11 +19,12 @@ type EventRecord struct {
 	RequestHash    string                `json:"requestHash,omitempty"`
 }
 type Store struct {
-	mu       sync.Mutex
-	dir      string
-	dossiers map[string]*domain.SurveyDossier
-	events   []domain.AuditEvent
-	idem     map[string]EventRecord
+	mu         sync.Mutex
+	dir        string
+	dossiers   map[string]*domain.SurveyDossier
+	events     []domain.AuditEvent
+	idem       map[string]EventRecord
+	ledgerFile *os.File
 }
 
 func Open(dir string) (*Store, error) {

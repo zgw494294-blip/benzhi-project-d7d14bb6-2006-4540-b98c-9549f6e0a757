@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"timber-release-gate/internal/domain"
@@ -12,14 +13,13 @@ import (
 func (s *Store) VerifyChain() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	file, err := os.Open(filepath.Join(s.dir, "events.jsonl"))
+	file, err := s.verificationLedger()
 	if os.IsNotExist(err) && len(s.events) == 0 {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("账本读取失败: %w", err)
 	}
-	defer file.Close()
 	persisted := make([]EventRecord, 0, len(s.events))
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -58,6 +58,21 @@ func (s *Store) VerifyChain() error {
 	}
 	return nil
 }
+
+func (s *Store) verificationLedger() (*os.File, error) {
+	if s.ledgerFile == nil {
+		file, err := os.Open(filepath.Join(s.dir, "events.jsonl"))
+		if err != nil {
+			return nil, err
+		}
+		s.ledgerFile = file
+	}
+	if _, err := s.ledgerFile.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	return s.ledgerFile, nil
+}
+
 func (s *Store) SnapshotVersion(id string) (uint64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
