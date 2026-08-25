@@ -119,10 +119,17 @@ func (s *Store) Commit(d *domain.SurveyDossier, expected uint64, key, reqHash, t
 	ev.Hash = domain.AuditHash(ev)
 	stored := domain.CloneDossier(d)
 	r := EventRecord{SchemaVersion: SchemaVersion, Event: ev, Dossier: stored, IdempotencyKey: key, RequestHash: reqHash}
+	s.events = append(s.events, ev)
+	s.dossiers[d.ID] = stored
+	if key != "" {
+		s.idem[key] = r
+	}
+	if e := s.snapshot(); e != nil {
+		return e
+	}
 	if e := s.append(r); e != nil {
 		return e
 	}
-	s.events = append(s.events, ev)
 	s.dossiers[d.ID] = stored
 	if key != "" {
 		s.idem[key] = r
