@@ -52,6 +52,12 @@ func (s *Service) QueryRisk(id string, filter RiskFilter) (RiskResponse, error) 
 	if filter.Status != "" && filter.Status != domain.FindingOpen && filter.Status != domain.FindingResolved {
 		return RiskResponse{}, &domain.Error{Code: "INVALID_FILTER", Message: "status筛选值无效"}
 	}
+	cacheable := filter.ComponentCode == "" && filter.Severity == "" && filter.Status == "" && filter.Covered == nil
+	if cacheable {
+		if response, exists := s.cachedRisk(id); exists {
+			return response, nil
+		}
+	}
 	var plan *domain.RepairPlanRevision
 	if current, exists := d.CurrentPlan(); exists {
 		plan = current
@@ -98,7 +104,25 @@ func (s *Service) QueryRisk(id string, filter RiskFilter) (RiskResponse, error) 
 		}
 		return response.Items[i].ComponentCode < response.Items[j].ComponentCode
 	})
+	if cacheable {
+		s.rememberRisk(id, response)
+	}
 	return response, nil
+}
+
+func (s *Service) cachedRisk(id string) (RiskResponse, bool) {
+	s.riskMu.Lock()
+	defer s.riskMu.Unlock()
+	response, exists := s.riskCache[id]
+	response.Items = append([]RiskItem(nil), response.Items...)
+	return response, exists
+}
+
+func (s *Service) rememberRisk(id string, response RiskResponse) {
+	s.riskMu.Lock()
+	defer s.riskMu.Unlock()
+	response.Items = append([]RiskItem(nil), response.Items...)
+	s.riskCache[id] = response
 }
 
 func findingCovered(plan *domain.RepairPlanRevision, finding domain.ReviewFinding, componentID string) bool {

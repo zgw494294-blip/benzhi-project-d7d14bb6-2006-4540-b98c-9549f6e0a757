@@ -9,11 +9,15 @@ import (
 )
 
 type Service struct {
-	st *store.Store
-	mu sync.Mutex
+	st        *store.Store
+	mu        sync.Mutex
+	riskMu    sync.Mutex
+	riskCache map[string]RiskResponse
 }
 
-func New(st *store.Store) *Service { return &Service{st: st} }
+func New(st *store.Store) *Service {
+	return &Service{st: st, riskCache: map[string]RiskResponse{}}
+}
 
 type CreateInput struct{ BuildingCode, Title, SurveyBoundary string }
 type ComponentInput struct {
