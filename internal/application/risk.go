@@ -40,7 +40,7 @@ type RiskResponse struct {
 
 func (s *Service) QueryRisk(id string, filter RiskFilter) (RiskResponse, error) {
 	if err := s.st.VerifyChain(); err != nil {
-		return RiskResponse{}, &domain.Error{Code: "AUDIT_INTEGRITY_ERROR", Message: err.Error()}
+		return RiskResponse{}, auditIntegrityError(err)
 	}
 	d, ok := s.st.Get(id)
 	if !ok {

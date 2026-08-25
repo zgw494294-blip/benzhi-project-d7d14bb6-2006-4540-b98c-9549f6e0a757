@@ -195,7 +195,7 @@ func (s *Service) ReleaseKey(id, actor string, expected uint64, key string) (*do
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.st.VerifyChain(); err != nil {
-		return nil, &domain.Error{Code: "AUDIT_INTEGRITY_ERROR", Message: err.Error()}
+		return nil, auditIntegrityError(err)
 	}
 	hash := domain.Digest(struct{ DossierID, Type string }{id, "RELEASE_ISSUED"})
 	if key != "" {
@@ -235,7 +235,7 @@ func (s *Service) ReleaseKey(id, actor string, expected uint64, key string) (*do
 }
 func (s *Service) Timeline(id string) (domain.Timeline, error) {
 	if err := s.st.VerifyChain(); err != nil {
-		return domain.Timeline{}, &domain.Error{Code: "AUDIT_INTEGRITY_ERROR", Message: err.Error()}
+		return domain.Timeline{}, auditIntegrityError(err)
 	}
 	return s.st.Timeline(id)
 }
@@ -252,7 +252,7 @@ func (s *Service) Risk(id string) ([]map[string]any, error) {
 }
 func (s *Service) Certificate(id string) (*domain.WorkReleaseCertificate, error) {
 	if err := s.st.VerifyChain(); err != nil {
-		return nil, &domain.Error{Code: "AUDIT_INTEGRITY_ERROR", Message: err.Error()}
+		return nil, auditIntegrityError(err)
 	}
 	d, ok := s.st.Get(id)
 	if !ok || d.Certificate == nil {
